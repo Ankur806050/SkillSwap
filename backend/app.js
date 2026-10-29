@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import errorHandler from "./middlewares/errorHandler.js";
 import notFound from "./middlewares/notFound.js";
+import authRouter from "./routes/auth.routes.js";
 
 
 
@@ -15,6 +16,7 @@ app.use(cors({
 app.use(express.json());
 
 // Routes
+app.use("/api/auth",authRouter);
 app.get("/", (req, res) => {
     res.send("SkillSwap API is running");
 });

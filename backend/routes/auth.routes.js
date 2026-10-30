@@ -5,7 +5,7 @@ import { resendOtp } from "../controllers/auth.controller.js";
 import { loginUser } from "../controllers/auth.controller.js";
 import { logoutUser } from "../controllers/auth.controller.js";
 import { getCurrentUser } from "../controllers/auth.controller.js";
-import authenticateUser from "../middleware/auth.middleware.js";
+import authenticateUser from "../middlewares/auth.middleware.js";
 
 const router = express.Router();
 

@@ -141,11 +141,22 @@ export const verifyEmail = asyncHandler(async(req,res) => {
   // extract email and otp send by user
   const {email , userOtp} = req.body;
 
+  //validate required fields
+  if(!email?.trim() || !userOtp){
+    return res.status(400).json({
+      success: false,
+      message: "Please provide all required fields."
+    });
+  }
+
+  // 2. Normalize email
+  const normalizedEmail = email.trim().toLowerCase();
+
   // check whether this user registered as pending user
-  const userExist = await User.findOne({email});
+  const userExist = await User.findOne({email:normalizedEmail});
   if(!userExist){
     return res.status(404).json({
-      success: "false",
+      success: false,
       message: "User not found. Please register first."
     })
   }
@@ -162,7 +173,7 @@ export const verifyEmail = asyncHandler(async(req,res) => {
   const otpRecord = await EmailVerification.findOne({userId : userExist._id});
   if(!otpRecord){
     return res.status(400).json({
-      success: "false",
+      success: false,
       message: "No active verification OTP found. Please request a new OTP."
     })
   }
@@ -215,8 +226,18 @@ export const verifyEmail = asyncHandler(async(req,res) => {
   await otpRecord.deleteOne();
 
   // Generate JWT
-const token = generateJwtToken(userExist._id);
+  const token = generateJwtToken(userExist._id);
 
+  // Set the cookie
+  res.cookie("accessToken", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: "/"
+  });
+
+  // Send success response
   return res.status(200).json({
     success: true,
     message: "Email verified successfully. You are now logged in.",
@@ -235,11 +256,22 @@ export const resendOtp = asyncHandler(async(req,res) => {
   //extract email
   const {email} = req.body;
 
+  //validate required field
+  if(!email?.trim()){
+    return res.status(400).json({
+      success: false,
+      message: "Please provide all required fields."
+    });
+  }
+
+  // 2. Normalize email
+  const normalizedEmail = email.trim().toLowerCase();
+
   // check whether this user registered as pending user
-  const userExist = await User.findOne({email});
+  const userExist = await User.findOne({email:normalizedEmail});
   if(!userExist){
     return res.status(404).json({
-      success: "false",
+      success: false,
       message: "User not found. Please register first."
     })
   }
@@ -256,7 +288,7 @@ export const resendOtp = asyncHandler(async(req,res) => {
   const otpRecord = await EmailVerification.findOne({userId : userExist._id});
   if(!otpRecord){
     return res.status(400).json({
-      success: "false",
+      success: false,
       message: "No active verification OTP found. Please request a new OTP."
     })
   }
@@ -290,7 +322,7 @@ export const resendOtp = asyncHandler(async(req,res) => {
 
   // 10. Send OTP email
   await sendEmail({
-    to: email.trim().toLowerCase(),
+    to: normalizedEmail,
     subject: "Verify your SkillSwap account",
     text: `Your SkillSwap verification OTP is ${otp}. It expires in 5 minutes. Do not share this code with anyone.`
   });
@@ -300,4 +332,118 @@ export const resendOtp = asyncHandler(async(req,res) => {
     success: true,
     message: "A new OTP has been sent to your email."
   });
+});
+
+
+//function to login the user
+export const loginUser = asyncHandler(async (req, res) => {
+  const { email, enteredPassword } = req.body;
+
+  // 1. Validate required fields
+  if (
+    typeof email !== "string" ||
+    !email.trim() ||
+    typeof enteredPassword !== "string" ||
+    !enteredPassword
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: "Please provide all required fields."
+    });
+  }
+
+  // 2. Normalize email
+  const normalizedEmail = email.trim().toLowerCase();
+
+  // 3. Find the user
+  const userExist = await User.findOne({
+    email: normalizedEmail
+  });
+
+  if (!userExist) {
+    return res.status(401).json({
+      success: false,
+      message: "Invalid email or password."
+    });
+  }
+
+  // 4. Check email verification
+  if (!userExist.emailVerified) {
+    return res.status(403).json({
+      success: false,
+      message: "Please verify your email first."
+    });
+  }
+
+  // 5. Compare password with stored hash
+  const isMatch = await bcrypt.compare(
+    enteredPassword,
+    userExist.passwordHash
+  );
+
+  if (!isMatch) {
+    return res.status(401).json({
+      success: false,
+      message: "Invalid email or password."
+    });
+  }
+
+  // 6. Generate JWT
+  const token = generateJwtToken(userExist._id);
+
+  // 7. Set the cookie
+  res.cookie("accessToken", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: "/"
+    });
+
+
+  // 8. Return success response
+  return res.status(200).json({
+    success: true,
+    message: "You are now logged in.",
+    token,
+    user: {
+      id: userExist._id,
+      name: userExist.name,
+      email: userExist.email,
+      collegeId: userExist.collegeId
+    }
+  });
+});
+
+
+// function to logout the user
+export const logoutUser = asyncHandler(async (req, res) => {
+    res.clearCookie("accessToken", {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/"
+    });
+
+    return res.status(200).json({
+        success: true,
+        message: "You have been logged out successfully."
+    });
+});
+
+//funtion to return current user 
+export const getCurrentUser = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user.userId)
+        .select("-passwordHash");
+
+    if (!user) {
+        const error = new Error("User not found.");
+        error.statusCode = 404;
+        throw error;
+    }
+
+    return res.status(200).json({
+        success: true,
+        user
+    });
 });

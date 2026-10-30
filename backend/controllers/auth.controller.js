@@ -229,3 +229,75 @@ const token = generateJwtToken(userExist._id);
     }
   });
 });
+
+// function to resend otp
+export const resendOtp = asyncHandler(async(req,res) => {
+  //extract email
+  const {email} = req.body;
+
+  // check whether this user registered as pending user
+  const userExist = await User.findOne({email});
+  if(!userExist){
+    return res.status(404).json({
+      success: "false",
+      message: "User not found. Please register first."
+    })
+  }
+
+  //check whether email is already verified
+  if (userExist.emailVerified) {
+    return res.status(400).json({
+        success: false,
+        message: "Email is already verified."
+    });
+  }
+
+  // check whether email verification record exist
+  const otpRecord = await EmailVerification.findOne({userId : userExist._id});
+  if(!otpRecord){
+    return res.status(400).json({
+      success: "false",
+      message: "No active verification OTP found. Please request a new OTP."
+    })
+  }
+
+  // check max attempts
+  const MAX_ATTEMPTS = 3;
+
+  if (otpRecord.attempts >= MAX_ATTEMPTS) {
+    await otpRecord.deleteOne();
+    return res.status(429).json({
+        success: false,
+        message: "Maximum OTP attempts exceeded. Please request a new OTP."
+    });
+  }
+
+  // Generate new OTP
+  const otp = generateOtp();
+  console.log("otp generated");
+
+  // Hash OTP before storing it
+  const otpHash = crypto
+    .createHash("sha256")
+    .update(otp)
+    .digest("hex");
+
+  // Update the verification record and save to database
+  otpRecord.otpHash = otpHash;
+  otpRecord.expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+  otpRecord.attempts += 1;
+  await otpRecord.save();
+
+  // 10. Send OTP email
+  await sendEmail({
+    to: email.trim().toLowerCase(),
+    subject: "Verify your SkillSwap account",
+    text: `Your SkillSwap verification OTP is ${otp}. It expires in 5 minutes. Do not share this code with anyone.`
+  });
+  console.log("otp sent successfully");
+
+  return res.status(200).json({
+    success: true,
+    message: "A new OTP has been sent to your email."
+  });
+});
